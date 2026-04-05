@@ -1,74 +1,32 @@
 package BaiTap_SS1;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
+//1. Xác định dữ liệu Đầu vào (Input) & Đầu ra (Output)
+//Để hệ thống hiểu được khách hàng muốn gì, chúng ta cần định nghĩa cấu trúc dữ liệu rõ ràng:
+//Dữ liệu đầu vào (Input):
+//userId (Long): Định danh của hội viên đang thực hiện đặt món.
+//foodId (Long): Mã định danh của món ăn (ví dụ: ID của "Mì xào bò").
+//quantity (int): Số lượng món khách muốn đặt.
 
-/**
- * BÁO CÁO PHÂN TÍCH & THIẾT KẾ GIẢI PHÁP: ORDER FOOD SERVICE
- * * 1. Input: userId (Long), foodId (Long), quantity (int)
- * 2. Output: Thông báo đặt hàng thành công hoặc ném ra ngoại lệ (Exception) cụ thể.
- * 3. Logic xử lý:
- * - B1: Kiểm tra tồn kho qua InventoryRepository.
- * - B2: Tính tổng tiền dựa trên giá món ăn.
- * - B3: Kiểm tra số dư tài khoản qua UserAccountRepository.
- * - B4: Thực hiện trừ kho và trừ tiền đồng thời (Atomic).
- */
+//Kết quả mong đợi (Output):
+//Thành công: Trả về thông báo xác nhận, trừ tiền tài khoản thành công và giảm số lượng trong kho.
+//Thất bại (Xử lý bẫy dữ liệu): Trả về thông báo lỗi cụ thể như "Sản phẩm đã hết hàng" hoặc "Số dư tài khoản không đủ để thanh toán".
 
+//2. Thiết kế Kiến trúc hệ thống (Loose Coupling & DI)
+//Áp dụng nguyên lý Dependency Inversion. OrderFoodService sẽ không tự khởi tạo các Repository mà sẽ nhận chúng qua Constructor Injection.
+//InventoryRepository (Interface): Chịu trách nhiệm truy vấn và cập nhật kho hàng.
+//UserAccountRepository (Interface): Chịu trách nhiệm kiểm tra và trừ tiền tài khoản.
+//OrderFoodService (Service): Lớp chứa logic nghiệp vụ chính, kết nối hai Repository trên.
 
-
-interface InventoryRepository {
-    int getStock(Long foodId);
-    double getPrice(Long foodId);
-    void updateStock(Long foodId, int newStock);
-}
-
-interface UserAccountRepository {
-    double getBalance(Long userId);
-    void deductMoney(Long userId, double amount);
-}
-
-
-@Service
-public class B3_SS1_IT210 {
-
-    private final InventoryRepository inventoryRepo;
-    private final UserAccountRepository userAccountRepo;
-
-    // Sử dụng Constructor Injection - Spring IoC sẽ tự tiêm các bean phù hợp vào đây
-    @Autowired
-    public B3_SS1_IT210(InventoryRepository inventoryRepo, UserAccountRepository userAccountRepo) {
-        this.inventoryRepo = inventoryRepo;
-        this.userAccountRepo = userAccountRepo;
-    }
-
-    /**
-     * Phương thức xử lý đặt đồ ăn với cơ chế "Bẫy dữ liệu"
-     */
-    public void placeOrder(Long userId, Long foodId, int quantity) throws Exception {
-
-        // 1. Kiểm tra lỗi kho
-        int currentStock = inventoryRepo.getStock(foodId);
-        if (currentStock < quantity) {
-            throw new Exception("LỖI NGHIỆP VỤ: Món ăn này đã hết hoặc không đủ số lượng trong kho!");
-        }
-
-        // 2. Tính toán tài chính
-        double itemPrice = inventoryRepo.getPrice(foodId);
-        double totalCost = itemPrice * quantity;
-
-        // 3. Kiểm tra lỗi tài khoản
-        double currentBalance = userAccountRepo.getBalance(userId);
-        if (currentBalance < totalCost) {
-            throw new Exception("LỖI NGHIỆP VỤ: Số dư tài khoản không đủ (Thiếu: " + (totalCost - currentBalance) + "đ)");
-        }
-
-        // 4. Thực thi cập nhật dữ liệu
-        inventoryRepo.updateStock(foodId, currentStock - quantity);
-        userAccountRepo.deductMoney(userId, totalCost);
-
-        System.out.println("--- ĐẶT MÓN THÀNH CÔNG ---");
-        System.out.println("User ID: " + userId + " | Món: " + foodId + " | SL: " + quantity);
-        System.out.println("Tổng chi phí: " + totalCost + "đ đã được trừ vào tài khoản.");
-    }
-}
+//3. Thiết kế luồng xử lý Logic (Workflow)
+//Quy trình xử lý một đơn hàng sẽ tuân thủ các bước nghiêm ngặt để tránh lỗi dữ liệu:
+//Tiếp nhận yêu cầu: Nhận userId, foodId, và quantity.
+//Kiểm tra tồn kho (Bẫy dữ liệu 1):
+//Gọi InventoryRepository lấy số lượng hiện có.
+//Nếu stock < quantity: Ném ra ngoại lệ OutOfStockException (Dừng quy trình).
+//Tính toán chi phí: Lấy đơn giá từ kho và nhân với số lượng.
+//Kiểm tra tài chính (Bẫy dữ liệu 2):
+//Gọi UserAccountRepository lấy số dư của userId.
+//Nếu balance < totalCost: Ném ra ngoại lệ InsufficientBalanceException (Dừng quy trình).
+//Thực thi giao dịch (Atomic Operation):
+//Nếu mọi điều kiện thỏa mãn: Cập nhật giảm kho và trừ tiền tài khoản.
+//Phản hồi: Trả về kết quả thành công cho máy trạm của khách.
